@@ -16,9 +16,13 @@ pub struct Cli {
     #[arg(short, long)]
     pub interactive: bool,
 
-    /// Only generate .pre-commit-config.yaml and skip running pre-commit install/run
+    /// Generate .pre-commit-config.yaml without installing or running hooks
     #[arg(long, conflicts_with = "interactive")]
     pub generate_only: bool,
+
+    /// After generating, run pre-commit install and pre-commit run --all-files
+    #[arg(long, conflicts_with = "interactive", conflicts_with = "generate_only")]
+    pub install: bool,
 
     /// Path to analyze (default: current directory)
     #[arg(long, default_value = ".")]
@@ -41,6 +45,7 @@ mod tests {
         let cli = Cli::parse_from(["prec-templ"]);
         assert!(!cli.interactive);
         assert!(!cli.generate_only);
+        assert!(!cli.install);
         assert_eq!(cli.path, PathBuf::from("."));
     }
 
@@ -67,5 +72,14 @@ mod tests {
         let cli = Cli::parse_from(["prec-templ", "--generate-only"]);
         assert!(cli.generate_only);
         assert!(!cli.interactive);
+        assert!(!cli.install);
+    }
+
+    #[test]
+    fn test_install() {
+        let cli = Cli::parse_from(["prec-templ", "--install"]);
+        assert!(cli.install);
+        assert!(!cli.interactive);
+        assert!(!cli.generate_only);
     }
 }

@@ -9,19 +9,22 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
           components: clippy, rustfmt
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ~/.cargo/bin/
@@ -29,7 +32,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: Check formatting
         run: cargo fmt --check
@@ -41,20 +44,36 @@ jobs:
         run: cargo test
 
   build-wheels:
-    runs-on: ubuntu-latest
+    name: Build wheel (${{ matrix.platform.target }})
+    runs-on: ${{ matrix.platform.runner }}
     needs: test
+    strategy:
+      matrix:
+        platform:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: auto
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            manylinux: auto
+          - runner: macos-13
+            target: x86_64-apple-darwin
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Build wheel (x86_64)
-        uses: PyO3/maturin-action@v1
+      - name: Build wheel
+        uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8
         with:
-          target: x86_64-unknown-linux-gnu
+          target: ${{ matrix.platform.target }}
           args: --release --out dist
-          manylinux: auto
+          manylinux: ${{ matrix.platform.manylinux || 'off' }}
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: wheel-linux-x86_64
+          name: wheel-${{ matrix.platform.target }}
           path: dist/*.whl

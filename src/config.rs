@@ -36,6 +36,8 @@ pub struct PreCommitConfig {
     #[serde(default)]
     pub uv_lock: bool,
     #[serde(default)]
+    pub pyrefly: bool,
+    #[serde(default)]
     pub pyrefly_args: Option<Vec<String>>,
 
     // Docker hooks options
@@ -91,6 +93,7 @@ impl Default for PreCommitConfig {
             python_base: false,
             python: false,
             uv_lock: false,
+            pyrefly: false,
             pyrefly_args: None,
             docker: false,
             dockerfile_linting: true, // Default to true

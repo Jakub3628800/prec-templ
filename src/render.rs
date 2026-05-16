@@ -3,7 +3,6 @@
 //! Renders pre-commit configuration YAML from Jinja2 templates.
 
 use crate::config::PreCommitConfig;
-use chrono::Utc;
 use minijinja::{context, Environment};
 
 /// Package version
@@ -63,6 +62,7 @@ fn generate_hooks(
         },
         "python" => context! {
             uv_lock => config.uv_lock,
+            pyrefly => config.pyrefly,
             pyrefly_args => config.pyrefly_args,
         },
         "docker" => context! {
@@ -131,8 +131,6 @@ pub fn render_config(config: &PreCommitConfig) -> Result<String, String> {
 
     let combined_content = hooks_content.join("\n\n");
     let technologies = config.detected_technologies();
-    let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-
     // Render the meta wrapper
     let meta_template = env.get_template("meta.j2").map_err(|e| e.to_string())?;
     let indented_content = indent(&combined_content, 2);
@@ -142,7 +140,6 @@ pub fn render_config(config: &PreCommitConfig) -> Result<String, String> {
             content => indented_content,
             python_version => config.python_version,
             version => VERSION,
-            timestamp => timestamp,
             technologies => technologies,
         })
         .map_err(|e| e.to_string())?;
@@ -174,6 +171,7 @@ mod tests {
         let config = PreCommitConfig {
             python: true,
             python_base: true,
+            pyrefly: true,
             yaml_check: true,
             ..Default::default()
         };
@@ -182,6 +180,19 @@ mod tests {
         let yaml = result.unwrap();
         assert!(yaml.contains("ruff"));
         assert!(yaml.contains("check-yaml"));
+        assert!(yaml.contains("pyrefly"));
+    }
+
+    #[test]
+    fn test_render_python_config_omits_pyrefly_by_default() {
+        let config = PreCommitConfig {
+            python: true,
+            python_base: true,
+            ..Default::default()
+        };
+        let yaml = render_config(&config).unwrap();
+        assert!(yaml.contains("ruff-check"));
+        assert!(!yaml.contains("pyrefly"));
     }
 
     #[test]
@@ -196,6 +207,29 @@ mod tests {
         let yaml = result.unwrap();
         assert!(yaml.contains("default_language_version:"));
         assert!(yaml.contains("python: python3.11"));
+    }
+
+    #[test]
+    fn test_render_javascript_omits_eslint_without_flat_config() {
+        let config = PreCommitConfig {
+            js: true,
+            ..Default::default()
+        };
+        let yaml = render_config(&config).unwrap();
+        assert!(yaml.contains("mirrors-prettier"));
+        assert!(!yaml.contains("mirrors-eslint"));
+    }
+
+    #[test]
+    fn test_render_javascript_includes_eslint_with_flat_config() {
+        let config = PreCommitConfig {
+            js: true,
+            eslint_config: Some("eslint.config.js".to_string()),
+            ..Default::default()
+        };
+        let yaml = render_config(&config).unwrap();
+        assert!(yaml.contains("mirrors-eslint"));
+        assert!(yaml.contains("eslint.config.js"));
     }
 
     #[test]

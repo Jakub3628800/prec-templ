@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
+requires = ["maturin>=1.9.3,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -8,7 +8,8 @@ version = "0.2.0"
 description = "Auto-detect technologies and generate pre-commit configuration files."
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Jakub Kriz"}
 ]
@@ -17,13 +18,14 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: POSIX :: Linux",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Rust",
     "Topic :: Software Development :: Quality Assurance",
@@ -31,9 +33,14 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/Jakub3628800/prec-templ"
+Releases = "https://github.com/Jakub3628800/prec-templ/releases"
 
 [tool.maturin]
 bindings = "bin"
 manifest-path = "Cargo.toml"
 module-name = "prec-templ"
 strip = true
+include = [
+    { path = "LICENSE", format = "sdist" },
+    { path = "rust-toolchain.toml", format = "sdist" },
+]

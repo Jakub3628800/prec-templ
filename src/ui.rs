@@ -184,7 +184,7 @@ pub fn ask_user_preferences(detected_config: PreCommitConfig) -> PreCommitConfig
     if detected_config.python {
         println!("{}", style("Python Hooks").bold());
         config.python = Confirm::new()
-            .with_prompt("Include Python hooks (Ruff + Pyrefly)?")
+            .with_prompt("Include Python hooks (Ruff)?")
             .default(detected_config.python)
             .interact()
             .unwrap_or(detected_config.python);
@@ -192,7 +192,16 @@ pub fn ask_user_preferences(detected_config: PreCommitConfig) -> PreCommitConfig
         if config.python {
             config.python_base = detected_config.python_base;
             config.uv_lock = detected_config.uv_lock;
-            config.pyrefly_args = detected_config.pyrefly_args.clone();
+            config.pyrefly = Confirm::new()
+                .with_prompt("Include Pyrefly type checking?")
+                .default(detected_config.pyrefly)
+                .interact()
+                .unwrap_or(detected_config.pyrefly);
+            if config.pyrefly {
+                config.pyrefly_args = detected_config.pyrefly_args.clone();
+            } else {
+                config.pyrefly_args = None;
+            }
         }
         println!();
     }

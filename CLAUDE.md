@@ -32,7 +32,8 @@ maturin develop             # Build and install in current virtualenv
 
 ### Running Locally
 ```bash
-cargo run                   # Run in auto-generate mode
+cargo run                   # Generate .pre-commit-config.yaml
+cargo run -- --install      # Generate, install hooks, and run pre-commit
 cargo run -- -i             # Run in interactive mode
 cargo run -- --path /some/dir  # Analyze specific directory
 ```
@@ -50,9 +51,9 @@ This is a Rust CLI tool that auto-generates `.pre-commit-config.yaml` files by d
 - **ui.rs**: Terminal UI (console, dialoguer, indicatif)
 
 ### Templates (templates/)
-Jinja2-compatible templates for generating YAML configs:
+MiniJinja templates for generating YAML configs:
 - `base.j2` - Base pre-commit hooks
-- `python.j2` - Python-specific hooks (Ruff, Pyrefly)
+- `python.j2` - Python-specific hooks (Ruff, optional Pyrefly, optional uv-lock)
 - `js.j2` - JavaScript/TypeScript hooks
 - `go.j2` - Go hooks
 - `docker.j2` - Docker hooks
@@ -65,7 +66,6 @@ Jinja2-compatible templates for generating YAML configs:
 - **minijinja**: Jinja2-compatible template engine
 - **console + dialoguer + indicatif**: Terminal UI (Rich equivalent)
 - **ignore**: .gitignore-aware file walking
-- **walkdir**: Recursive directory traversal
 
 ## Building Wheels
 ```bash

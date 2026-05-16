@@ -28,7 +28,7 @@ fn run() -> Result<(), String> {
     if args.interactive {
         run_interactive(&path)
     } else {
-        run_auto(&path, args.generate_only)
+        run_auto(&path, args.install)
     }
 }
 
@@ -110,16 +110,12 @@ fn run_interactive(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Run in auto-generate mode - detect, generate, save, and run pre-commit.
-fn run_auto(path: &Path, generate_only: bool) -> Result<(), String> {
-    run_auto_with_command(path, generate_only, "pre-commit")
+/// Run in auto-generate mode - detect, generate, save, and optionally run pre-commit.
+fn run_auto(path: &Path, install: bool) -> Result<(), String> {
+    run_auto_with_command(path, install, "pre-commit")
 }
 
-fn run_auto_with_command(
-    path: &Path,
-    generate_only: bool,
-    pre_commit_cmd: &str,
-) -> Result<(), String> {
+fn run_auto_with_command(path: &Path, install: bool, pre_commit_cmd: &str) -> Result<(), String> {
     // Detect technologies
     let config = discover::discover_config(path);
 
@@ -134,8 +130,8 @@ fn run_auto_with_command(
         style(config_file.display()).green()
     ));
 
-    if generate_only {
-        ui::print_info("Skipping pre-commit install/run due to --generate-only.");
+    if !install {
+        ui::print_info("Generated only. Pass --install to install hooks and run pre-commit.");
         return Ok(());
     }
 
@@ -240,11 +236,11 @@ exit 0
 
     #[cfg(unix)]
     #[test]
-    fn test_run_auto_generate_only_skips_commands() {
+    fn test_run_auto_default_skips_commands() {
         let tmp = tempdir().unwrap();
         let (cmd, calls_log) = create_fake_pre_commit(tmp.path(), false);
 
-        let result = run_auto_with_command(tmp.path(), true, &cmd);
+        let result = run_auto_with_command(tmp.path(), false, &cmd);
         assert!(result.is_ok());
         assert!(tmp.path().join(".pre-commit-config.yaml").exists());
         assert!(!calls_log.exists());
@@ -256,7 +252,7 @@ exit 0
         let tmp = tempdir().unwrap();
         let (cmd, calls_log) = create_fake_pre_commit(tmp.path(), true);
 
-        let result = run_auto_with_command(tmp.path(), false, &cmd);
+        let result = run_auto_with_command(tmp.path(), true, &cmd);
         assert!(result.is_ok());
 
         let calls = fs::read_to_string(calls_log).unwrap();
@@ -270,7 +266,7 @@ exit 0
         let tmp = tempdir().unwrap();
         let (cmd, calls_log) = create_fake_pre_commit(tmp.path(), false);
 
-        let result = run_auto_with_command(tmp.path(), false, &cmd);
+        let result = run_auto_with_command(tmp.path(), true, &cmd);
         assert!(result.is_ok());
 
         let calls = fs::read_to_string(calls_log).unwrap();

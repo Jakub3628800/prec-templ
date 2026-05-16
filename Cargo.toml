@@ -2,6 +2,7 @@
 name = "prec-templ"
 version = "0.2.0"
 edition = "2021"
+rust-version = "1.85"
 authors = ["Jakub Kriz"]
 description = "Auto-detect technologies and generate pre-commit configuration files."
 license = "MIT"
@@ -19,7 +20,7 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 
 # Template engine (Jinja2 equivalent)
-minijinja = { version = "2", features = ["loader"] }
+minijinja = { version = "2", features = ["json", "loader"] }
 
 # Terminal UI (Rich equivalent)
 console = "0.15"
@@ -31,9 +32,6 @@ ignore = "0.4"
 
 # TOML parsing
 toml = "0.8"
-
-# Date/time
-chrono = "0.4"
 
 # Regex
 regex = "1"
