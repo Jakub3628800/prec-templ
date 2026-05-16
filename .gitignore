@@ -10,7 +10,6 @@ venv/
 
 # Rust
 target/
-Cargo.lock
 
 # Node.js
 node_modules/

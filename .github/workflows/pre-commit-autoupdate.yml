@@ -14,23 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
         with:
           enable-cache: true
 
       - name: Update hook versions in templates
-        run: uv run --with pre-commit python scripts/update_hook_versions.py
+        run: uv run --no-project --with packaging python scripts/update_hook_versions.py
 
-      - name: Regenerate .pre-commit-config.yaml from templates
-        run: uv run python -m pre_commit_starter
+      - name: Regenerate repository pre-commit config
+        run: cargo run -- --path .
 
       - name: Check for changes
         id: changes
         run: |
-          git add pre_commit_starter/hook_templates/ .pre-commit-config.yaml
+          git add templates/ .pre-commit-config.yaml
           if ! git diff --staged --quiet; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             git diff --staged --stat
@@ -38,14 +38,14 @@ jobs:
 
       - name: Create Pull Request
         if: steps.changes.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676
         with:
           title: "Update pre-commit hook versions"
           body: |
             Automated update of pre-commit hook versions.
 
             ## Changes
-            - Updated hook versions in `pre_commit_starter/hook_templates/`
+            - Updated hook versions in `templates/`
             - Regenerated `.pre-commit-config.yaml` from updated templates
 
             ## Review

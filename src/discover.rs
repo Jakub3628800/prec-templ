@@ -58,7 +58,7 @@ const JSX_INDICATORS: &[&str] = &[
     ".storybook",
 ];
 
-const GO_INDICATORS: &[&str] = &["go.mod", "go.sum", "main.go", ".go", "vendor"];
+const GO_INDICATORS: &[&str] = &["go.mod", "go.sum", "main.go", ".go"];
 
 const DOCKER_INDICATORS: &[&str] = &[
     "dockerfile",
@@ -74,9 +74,80 @@ const JSON_INDICATORS: &[&str] = &[".json"];
 const TOML_INDICATORS: &[&str] = &[".toml", "pyproject.toml"];
 const XML_INDICATORS: &[&str] = &[".xml"];
 
-/// Discover all files in the given path, respecting .gitignore.
-pub fn discover_files(path: &Path) -> HashSet<String> {
+const PRETTIER_CONFIG_FILES: &[&str] = &[
+    ".prettierrc",
+    ".prettierrc.json",
+    ".prettierrc.yml",
+    ".prettierrc.yaml",
+    ".prettierrc.json5",
+    ".prettierrc.js",
+    ".prettierrc.cjs",
+    ".prettierrc.mjs",
+    "prettier.config.js",
+    "prettier.config.cjs",
+    "prettier.config.mjs",
+];
+
+const FLAT_ESLINT_CONFIG_FILES: &[&str] = &[
+    "eslint.config.js",
+    "eslint.config.mjs",
+    "eslint.config.cjs",
+    "eslint.config.ts",
+    "eslint.config.mts",
+    "eslint.config.cts",
+];
+
+#[derive(Debug, Default)]
+struct ProjectFiles {
+    names: HashSet<String>,
+    extensions: HashSet<String>,
+    relative_paths: HashSet<String>,
+}
+
+impl ProjectFiles {
+    fn all_indicators(&self) -> HashSet<String> {
+        self.names
+            .iter()
+            .chain(self.extensions.iter())
+            .cloned()
+            .collect()
+    }
+
+    fn has_path(&self, path: &str) -> bool {
+        self.relative_paths.contains(path)
+    }
+
+    fn first_existing_path(&self, candidates: &[&str]) -> Option<String> {
+        candidates.iter().find_map(|candidate| {
+            self.relative_paths
+                .get(&candidate.to_lowercase())
+                .map(ToOwned::to_owned)
+        })
+    }
+
+    fn has_file_in_dir_with_extension(&self, dir: &str, extensions: &[&str]) -> bool {
+        let dir = dir.trim_end_matches('/');
+        self.relative_paths.iter().any(|path| {
+            path.strip_prefix(dir)
+                .and_then(|rest| rest.strip_prefix('/'))
+                .is_some_and(|rest| {
+                    !rest.contains('/') && extensions.iter().any(|ext| rest.ends_with(ext))
+                })
+        })
+    }
+}
+
+fn normalize_relative_path(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy().to_lowercase())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn discover_project_files(path: &Path) -> ProjectFiles {
     let mut files = HashSet::new();
+    let mut extensions = HashSet::new();
+    let mut relative_paths = HashSet::new();
 
     let walker = WalkBuilder::new(path)
         .hidden(false)
@@ -88,16 +159,23 @@ pub fn discover_files(path: &Path) -> HashSet<String> {
     for entry in walker.flatten() {
         if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
             let file_name = entry.file_name().to_string_lossy().to_lowercase();
-            files.insert(file_name.clone());
+            files.insert(file_name);
 
-            // Also add file extension
             if let Some(ext) = entry.path().extension() {
-                files.insert(format!(".{}", ext.to_string_lossy().to_lowercase()));
+                extensions.insert(format!(".{}", ext.to_string_lossy().to_lowercase()));
+            }
+
+            if let Ok(relative_path) = entry.path().strip_prefix(path) {
+                relative_paths.insert(normalize_relative_path(relative_path));
             }
         }
     }
 
-    files
+    ProjectFiles {
+        names: files,
+        extensions,
+        relative_paths,
+    }
 }
 
 /// Check if files contain any of the given indicators.
@@ -142,23 +220,8 @@ pub fn detect_docker(files: &HashSet<String>) -> bool {
     has_indicator(files, DOCKER_INDICATORS)
 }
 
-/// Detect if project uses GitHub Actions.
-pub fn detect_github_actions(path: &Path) -> bool {
-    let workflows_dir = path.join(".github").join("workflows");
-    if workflows_dir.is_dir() {
-        if let Ok(entries) = fs::read_dir(&workflows_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if let Some(ext) = path.extension() {
-                    let ext_str = ext.to_string_lossy().to_lowercase();
-                    if ext_str == "yml" || ext_str == "yaml" {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    false
+fn detect_github_actions_from_files(files: &ProjectFiles) -> bool {
+    files.has_file_in_dir_with_extension(".github/workflows", &[".yml", ".yaml"])
 }
 
 /// Detect YAML files.
@@ -183,6 +246,16 @@ pub fn detect_xml(files: &HashSet<String>) -> bool {
 
 /// Attempt to detect Python version from project files.
 pub fn detect_python_version(path: &Path) -> Option<String> {
+    // Prefer explicit interpreter pins over broad metadata ranges.
+    let python_version_path = path.join(".python-version");
+    if python_version_path.exists() {
+        if let Ok(content) = fs::read_to_string(&python_version_path) {
+            if let Some(version) = normalize_python_version(content.trim()) {
+                return Some(version);
+            }
+        }
+    }
+
     // Check pyproject.toml
     let pyproject_path = path.join("pyproject.toml");
     if pyproject_path.exists() {
@@ -192,8 +265,9 @@ pub fn detect_python_version(path: &Path) -> Option<String> {
                     if let Some(requires_python) =
                         project.get("requires-python").and_then(|r| r.as_str())
                     {
-                        // Extract first Python version token, e.g. ">=3.11,<4" -> "python3.11"
-                        let re = Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap();
+                        // Only use exact interpreter-style constraints. Broad ranges like
+                        // ">=3.11" describe compatibility, not the interpreter to run hooks with.
+                        let re = Regex::new(r"^\s*(?:==\s*)?(\d+\.\d+(?:\.\d+)?)\s*$").unwrap();
                         if let Some(caps) = re.captures(requires_python) {
                             return Some(format!("python{}", &caps[1]));
                         }
@@ -203,27 +277,24 @@ pub fn detect_python_version(path: &Path) -> Option<String> {
         }
     }
 
-    // Check .python-version file
-    let python_version_path = path.join(".python-version");
-    if python_version_path.exists() {
-        if let Ok(content) = fs::read_to_string(&python_version_path) {
-            let version = content.trim();
-            if !version.is_empty() {
-                if version.starts_with("python") {
-                    return Some(version.to_string());
-                } else {
-                    return Some(format!("python{}", version));
-                }
-            }
-        }
-    }
-
     None
+}
+
+fn normalize_python_version(version: &str) -> Option<String> {
+    if version.is_empty() {
+        return None;
+    }
+    if version.starts_with("python") {
+        Some(version.to_string())
+    } else {
+        Some(format!("python{}", version))
+    }
 }
 
 /// Discover project configuration by analyzing files.
 pub fn discover_config(path: &Path) -> PreCommitConfig {
-    let files = discover_files(path);
+    let project_files = discover_project_files(path);
+    let files = project_files.all_indicators();
 
     let has_python = detect_python(&files);
     let has_js = detect_javascript(&files);
@@ -231,7 +302,7 @@ pub fn discover_config(path: &Path) -> PreCommitConfig {
     let has_jsx = detect_jsx(&files);
     let has_go = detect_go(&files);
     let has_docker = detect_docker(&files);
-    let has_github_actions = detect_github_actions(path);
+    let has_github_actions = detect_github_actions_from_files(&project_files);
 
     let has_yaml = detect_yaml(&files);
     let has_json = detect_json(&files);
@@ -256,6 +327,7 @@ pub fn discover_config(path: &Path) -> PreCommitConfig {
         python_base: has_python,
         python: has_python,
         uv_lock: detect_uv_lock(&files),
+        pyrefly: project_files.has_path("pyrefly.toml"),
         pyrefly_args: None,
         docker: has_docker,
         dockerfile_linting: true,
@@ -266,8 +338,8 @@ pub fn discover_config(path: &Path) -> PreCommitConfig {
         js: has_js,
         typescript: has_typescript,
         jsx: has_jsx,
-        prettier_config: None,
-        eslint_config: None,
+        prettier_config: project_files.first_existing_path(PRETTIER_CONFIG_FILES),
+        eslint_config: project_files.first_existing_path(FLAT_ESLINT_CONFIG_FILES),
         go: has_go,
         go_critic: false,
     }
@@ -324,11 +396,23 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_python_version_from_pyproject() {
+    fn test_detect_python_version_ignores_lower_bound_pyproject_range() {
         let tmp = tempdir().unwrap();
         fs::write(
             tmp.path().join("pyproject.toml"),
             "[project]\nrequires-python = \">=3.11,<4\"",
+        )
+        .unwrap();
+
+        assert_eq!(detect_python_version(tmp.path()), None);
+    }
+
+    #[test]
+    fn test_detect_python_version_from_exact_pyproject() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("pyproject.toml"),
+            "[project]\nrequires-python = \"==3.11\"",
         )
         .unwrap();
 
@@ -339,11 +423,11 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_python_version_patch_version() {
+    fn test_detect_python_version_exact_patch_version() {
         let tmp = tempdir().unwrap();
         fs::write(
             tmp.path().join("pyproject.toml"),
-            "[project]\nrequires-python = \">=3.10.5\"",
+            "[project]\nrequires-python = \"3.10.5\"",
         )
         .unwrap();
 
@@ -362,5 +446,68 @@ mod tests {
             detect_python_version(tmp.path()),
             Some("python3.12.1".to_string())
         );
+    }
+
+    #[test]
+    fn test_python_version_file_takes_precedence() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join(".python-version"), "3.12\n").unwrap();
+        fs::write(
+            tmp.path().join("pyproject.toml"),
+            "[project]\nrequires-python = \"==3.11\"",
+        )
+        .unwrap();
+
+        assert_eq!(
+            detect_python_version(tmp.path()),
+            Some("python3.12".to_string())
+        );
+    }
+
+    #[test]
+    fn test_discover_config_detects_pyrefly_only_when_config_exists() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("main.py"), "print('x')\n").unwrap();
+        let config = discover_config(tmp.path());
+        assert!(config.python);
+        assert!(!config.pyrefly);
+
+        fs::write(tmp.path().join("pyrefly.toml"), "").unwrap();
+        let config = discover_config(tmp.path());
+        assert!(config.pyrefly);
+    }
+
+    #[test]
+    fn test_github_actions_detection_is_path_aware() {
+        let tmp = tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("docs")).unwrap();
+        fs::write(tmp.path().join("docs").join("workflow.yml"), "name: docs\n").unwrap();
+        assert!(!discover_config(tmp.path()).github_actions);
+
+        fs::create_dir_all(tmp.path().join(".github").join("workflows")).unwrap();
+        fs::write(
+            tmp.path().join(".github").join("workflows").join("ci.yml"),
+            "name: ci\n",
+        )
+        .unwrap();
+        assert!(discover_config(tmp.path()).github_actions);
+    }
+
+    #[test]
+    fn test_javascript_config_detection() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("package.json"), "{}\n").unwrap();
+
+        let config = discover_config(tmp.path());
+        assert!(config.js);
+        assert_eq!(config.prettier_config, None);
+        assert_eq!(config.eslint_config, None);
+
+        fs::write(tmp.path().join(".prettierrc"), "{}\n").unwrap();
+        fs::write(tmp.path().join("eslint.config.js"), "export default [];\n").unwrap();
+
+        let config = discover_config(tmp.path());
+        assert_eq!(config.prettier_config, Some(".prettierrc".to_string()));
+        assert_eq!(config.eslint_config, Some("eslint.config.js".to_string()));
     }
 }

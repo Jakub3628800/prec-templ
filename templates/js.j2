@@ -3,7 +3,7 @@
 # =====================
 
 - repo: https://github.com/pre-commit/mirrors-prettier
-  rev: v4.0.0-alpha.8
+  rev: v3.1.0
   hooks:
   - id: prettier
     name: Format JavaScript/TypeScript code with Prettier
@@ -17,11 +17,12 @@
     types: [javascript]
     {%- endif %}
     {%- if prettier_config %}
-    args: [--config={{ prettier_config }}]
+    args: [--config, {{ prettier_config | tojson }}]
     {%- endif %}
 
+{%- if eslint_config %}
 - repo: https://github.com/pre-commit/mirrors-eslint
-  rev: v9.38.0
+  rev: v10.4.0
   hooks:
   - id: eslint
     name: Run ESLint for JavaScript/TypeScript
@@ -36,9 +37,8 @@
     {%- endif %}
     args:
     - --concurrency=1
-    {%- if eslint_config %}
-    - --config={{ eslint_config }}
-    {%- endif %}
+    - --config
+    - {{ eslint_config | tojson }}
     additional_dependencies:
     {%- if typescript %}
     - '@typescript-eslint/eslint-plugin'
@@ -49,3 +49,4 @@
     - eslint-plugin-react-hooks
     {%- endif %}
     - eslint
+{%- endif %}
